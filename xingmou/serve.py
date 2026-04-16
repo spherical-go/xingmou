@@ -184,11 +184,11 @@ def _resume_games(client: AstrialClient, agent_name: str,
     return len(active)
 
 
-def _has_waiting_game(client: AstrialClient) -> bool:
-    """Check if agent already has a waiting game (no need to create another)."""
+def _has_active_game(client: AstrialClient) -> bool:
+    """Check if agent already has an active game (waiting or playing)."""
     try:
         games = client.my_games()
-        return any(g.get("status") == "waiting" for g in games)
+        return any(g.get("status") in ("waiting", "playing") for g in games)
     except Exception:
         return False
 
@@ -219,6 +219,12 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
 
     while True:
         try:
+            # 0. Only one game at a time
+            if _has_active_game(client):
+                log.info("Already have an active game, waiting")
+                time.sleep(15)
+                continue
+
             # 1. Try to join an existing game
             found = _find_joinable_game(client, agent_name)
             if found:
@@ -230,12 +236,8 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
                     log.warning("Failed to join %s: %s", game_id, e)
                     found = None
 
-            # 2. No joinable game — only create if we don't already have a waiting one
+            # 2. No joinable game — create one
             if not found:
-                if _has_waiting_game(client):
-                    log.info("Already have a waiting game, not creating another")
-                    time.sleep(15)
-                    continue
                 color = prefer_color or random.choice(["black", "white"])
                 result = client.create_game()
                 game_id = result["game_id"]
