@@ -125,22 +125,43 @@ def _find_joinable_game(client: AstrialClient, my_name: str) -> tuple[str, str] 
 
 # ── Main loop ──
 
-def _resume_games(client: AstrialClient, use_png: bool, poll_interval: float) -> int:
-    """Resume any in-progress games from a previous session. Returns count."""
+def _resume_games(client: AstrialClient, agent_name: str,
+                   use_png: bool, poll_interval: float) -> int:
+    """Resume any in-progress games from a previous session. Returns count.
+
+    Re-joins each game to restore Redis ready state that may have been
+    lost during the restart (the handshake lives in Redis, not Postgres).
+    """
     try:
         games = client.my_games()
     except Exception as e:
         log.warning("Failed to list own games: %s", e)
         return 0
 
-    active = [g for g in games if g.get("status") == "playing"]
+    active = [g for g in games if g.get("status") in ("playing", "waiting")]
     if not active:
         return 0
 
     log.info("Found %d in-progress game(s) to resume", len(active))
     for g in active:
         game_id = g["game_id"]
-        log.info("Resuming game %s", game_id)
+        # Figure out which role we hold
+        if g.get("black_user") == agent_name:
+            role = "black"
+        elif g.get("white_user") == agent_name:
+            role = "white"
+        else:
+            log.warning("Cannot determine role in game %s, skipping", game_id)
+            continue
+
+        log.info("Resuming game %s as %s (status=%s)", game_id, role, g.get("status"))
+
+        # Re-join to restore Redis joined/ready state (idempotent on server)
+        try:
+            client.join_game(game_id, role)
+        except Exception as e:
+            log.warning("Failed to re-join game %s: %s", game_id, e)
+
         _update(state="playing", current_game=game_id)
         try:
             play_game(client, game_id, poll_interval=poll_interval, use_png=use_png)
@@ -264,7 +285,7 @@ def run(
     agent_name = _get_status().get("name") or name
 
     # Resume any in-progress games from before restart
-    _resume_games(client, use_png, poll_interval)
+    _resume_games(client, agent_name, use_png, poll_interval)
 
     log.info("Entering auto-play loop")
     _play_loop(client, agent_name, color, use_png, poll_interval)
