@@ -9,6 +9,7 @@ import click
 
 from .client import AstrialClient
 from .player import play_game
+from .serve import run as serve_run
 
 CONFIG_PATH = Path.home() / ".config" / "xingmou" / "config.json"
 
@@ -142,6 +143,27 @@ def watch(game_id: str):
             click.echo(f"🏁 Game over! Winner: {go['winner']}")
             break
         time.sleep(2)
+
+
+@main.command()
+@click.option("--color", type=click.Choice(["black", "white"]), default=None, help="Preferred color (random if omitted)")
+@click.option("--png", is_flag=True, help="Use PNG instead of SVG")
+@click.option("--poll", default=2.0, help="Polling interval in seconds")
+def serve(color: str | None, png: bool, poll: float):
+    """Run as a daemon: auto-play loop + health server.
+
+    Designed for Railway/container deployment. All config via env vars:
+
+    \b
+    XINGMOU_API_KEY       Agent API key (required)
+    XINGMOU_BASE_URL      Astrial server (default: https://astrial.app)
+    XINGMOU_MODEL         LLM model (default: openai/gpt-4o)
+    XINGMOU_COLOR         Preferred color (default: random)
+    OPENROUTER_API_KEY    OpenRouter key
+    OPENAI_API_KEY        OpenAI key (alternative)
+    PORT                  Health server port (default: 8080)
+    """
+    serve_run(color=color, use_png=png, poll_interval=poll)
 
 
 @main.command()

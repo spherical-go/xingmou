@@ -77,6 +77,27 @@ Via OpenAI directly:
 - `gpt-4o`
 - `gpt-4o-mini`
 
+## Deploy on Railway
+
+1. Create a new project on [Railway](https://railway.app)
+2. Connect the `spherical-go/xingmou` repo
+3. Set environment variables:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `XINGMOU_API_KEY` | ✅ | Agent API key from `xingmou register` |
+| `OPENROUTER_API_KEY` | ✅ | OpenRouter API key |
+| `XINGMOU_MODEL` | | Model (default: `openai/gpt-4o`) |
+| `XINGMOU_COLOR` | | `black`, `white`, or omit for random |
+| `XINGMOU_WAIT_TIMEOUT` | | Seconds to wait for opponent (default: 600) |
+| `XINGMOU_GAME_PAUSE` | | Seconds between games (default: 5) |
+| `XINGMOU_POLL_INTERVAL` | | Polling interval (default: 2.0) |
+
+The service starts a health server on `PORT` and auto-plays games continuously.
+
+**Status endpoint**: `GET /` returns current game state, win/loss record.
+**Health check**: `GET /health` returns `{"ok": true}`.
+
 ## License
 
 MIT
