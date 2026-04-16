@@ -125,72 +125,18 @@ def _find_joinable_game(client: AstrialClient, my_name: str) -> tuple[str, str] 
 
 # ── Main loop ──
 
-def _resume_games(client: AstrialClient, agent_name: str,
-                   use_png: bool, poll_interval: float) -> int:
-    """Resume any in-progress games from a previous session. Returns count.
-
-    Re-joins each game to restore Redis ready state that may have been
-    lost during the restart (the handshake lives in Redis, not Postgres).
-    """
+def _find_active_game(client: AstrialClient, agent_name: str) -> dict | None:
+    """Return the first active game (playing first, then waiting), or None."""
     try:
         games = client.my_games()
-    except Exception as e:
-        log.warning("Failed to list own games: %s", e)
-        return 0
-
+    except Exception:
+        return None
     active = [g for g in games if g.get("status") in ("playing", "waiting")]
     if not active:
-        return 0
-
-    # Process playing games first so they aren't blocked by waiting ones
+        return None
+    # Prefer playing over waiting
     active.sort(key=lambda g: 0 if g.get("status") == "playing" else 1)
-
-    log.info("Found %d in-progress game(s) to resume", len(active))
-    for g in active:
-        game_id = g["game_id"]
-        # Figure out which role we hold
-        if g.get("black_user") == agent_name:
-            role = "black"
-        elif g.get("white_user") == agent_name:
-            role = "white"
-        else:
-            log.warning("Cannot determine role in game %s, skipping", game_id)
-            continue
-
-        log.info("Resuming game %s as %s (status=%s)", game_id, role, g.get("status"))
-
-        # Re-join to restore Redis joined/ready state (idempotent on server)
-        try:
-            client.join_game(game_id, role)
-        except Exception as e:
-            log.warning("Failed to re-join game %s: %s", game_id, e)
-
-        # For waiting games, wait for opponent before entering play loop
-        if g.get("status") == "waiting":
-            _update(state="waiting", current_game=game_id)
-            timeout = float(os.environ.get("XINGMOU_WAIT_TIMEOUT", "600"))
-            if not _wait_for_game_start(client, game_id, timeout):
-                log.warning("Timeout waiting for opponent in resumed game %s", game_id)
-                _update(current_game=None)
-                continue
-
-        _update(state="playing", current_game=game_id)
-        try:
-            play_game(client, game_id, poll_interval=poll_interval, use_png=use_png)
-        except Exception as e:
-            log.error("Error resuming game %s: %s", game_id, e)
-        _update(current_game=None)
-
-    return len(active)
-
-
-def _has_active_game(client: AstrialClient) -> bool:
-    """Check if agent already has an active game (waiting or playing)."""
-    try:
-        games = client.my_games()
-        return any(g.get("status") in ("waiting", "playing") for g in games)
-    except Exception:
-        return False
+    return active[0]
 
 
 def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float) -> bool:
@@ -214,39 +160,53 @@ def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float) ->
 
 def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
                use_png: bool, poll_interval: float):
-    """Continuously find or create games and play them."""
+    """Continuously find or create games and play them (one at a time)."""
     _update(state="ready")
 
     while True:
         try:
-            # 0. Only one game at a time
-            if _has_active_game(client):
-                log.info("Already have an active game, waiting")
-                time.sleep(15)
-                continue
+            game_id = None
 
-            # 1. Try to join an existing game
-            found = _find_joinable_game(client, agent_name)
-            if found:
-                game_id, role = found
-                log.info("Found joinable game %s — joining as %s", game_id, role)
+            # 0. Resume an existing active game (re-join to restore Redis state)
+            existing = _find_active_game(client, agent_name)
+            if existing:
+                game_id = existing["game_id"]
+                bu = existing.get("black_user")
+                wu = existing.get("white_user")
+                role = "black" if bu == agent_name else "white" if wu == agent_name else None
+                if not role:
+                    log.warning("Cannot determine role in game %s, skipping", game_id)
+                    time.sleep(15)
+                    continue
+
+                log.info("Resuming game %s as %s (status=%s)", game_id, role, existing.get("status"))
                 try:
                     client.join_game(game_id, role)
                 except Exception as e:
-                    log.warning("Failed to join %s: %s", game_id, e)
-                    found = None
+                    log.warning("Failed to re-join game %s: %s", game_id, e)
+            else:
+                # 1. Try to join an existing game
+                found = _find_joinable_game(client, agent_name)
+                if found:
+                    game_id, role = found
+                    log.info("Found joinable game %s — joining as %s", game_id, role)
+                    try:
+                        client.join_game(game_id, role)
+                    except Exception as e:
+                        log.warning("Failed to join %s: %s", game_id, e)
+                        game_id = None
 
-            # 2. No joinable game — create one
-            if not found:
-                color = prefer_color or random.choice(["black", "white"])
-                result = client.create_game()
-                game_id = result["game_id"]
-                log.info("Created game %s", game_id)
-                client.join_game(game_id, color)
+                # 2. No joinable game — create one
+                if not game_id:
+                    color = prefer_color or random.choice(["black", "white"])
+                    result = client.create_game()
+                    game_id = result["game_id"]
+                    log.info("Created game %s", game_id)
+                    client.join_game(game_id, color)
 
             _update(state="waiting", current_game=game_id)
 
-            # 3. Wait for opponent
+            # 3. Wait for opponent / game to be ready
             timeout = float(os.environ.get("XINGMOU_WAIT_TIMEOUT", "600"))
             if not _wait_for_game_start(client, game_id, timeout):
                 log.warning("Timeout waiting for opponent in %s", game_id)
@@ -319,8 +279,5 @@ def run(
 
     agent_name = _get_status().get("name") or name
 
-    # Resume any in-progress games from before restart
-    _resume_games(client, agent_name, use_png, poll_interval)
-
-    log.info("Entering auto-play loop")
+    log.info("Entering auto-play loop (resumes active games automatically)")
     _play_loop(client, agent_name, color, use_png, poll_interval)
