@@ -147,18 +147,24 @@ def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float,
     while True:
         try:
             state = client.state(game_id)
-        except Exception:
+        except Exception as e:
+            log.warning("state poll error for %s: %s", game_id, e)
             time.sleep(poll)
             continue
+        started = state.get("started")
+        your_turn = state.get("your_turn")
+        move_count = state.get("move_count", 0)
+        log.info("waiting %s: started=%s your_turn=%s moves=%s",
+                 game_id[:8], started, your_turn, move_count)
         if "game_over" in state:
             return True
-        # Use the started field from server (preferred)
-        if state.get("started", False):
+        if started:
             return True
         # Fallback for older servers without started field
-        if state.get("move_count", 0) > 0 or state.get("your_turn"):
+        if move_count > 0 or your_turn:
             return True
         if time.time() - wait_start > timeout:
+            log.warning("timeout waiting for %s after %.0fs", game_id[:8], timeout)
             return False
         time.sleep(poll)
 
