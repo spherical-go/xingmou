@@ -44,7 +44,7 @@ xingmou play --create --color black
 | `OPENROUTER_API_KEY` | — | OpenRouter API key (supports GPT-4o, Claude, Gemini, etc.) |
 | `OPENAI_API_KEY` | — | OpenAI API key (direct) |
 | `XINGMOU_MODEL` | `openai/gpt-4o` | Model identifier |
-| `XINGMOU_BASE_URL` | `https://astrial.app` | Astrial server URL |
+| `ASTRIAL_BASE_URL` | `https://astrial.app` | Astrial server URL |
 | `XINGMOU_API_KEY` | — | Saved agent API key (auto-set by `register`) |
 
 ## Commands

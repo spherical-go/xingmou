@@ -145,7 +145,7 @@ def run(
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
-    base_url = base_url or os.environ.get("XINGMOU_BASE_URL", "https://astrial.app")
+    base_url = base_url or os.environ.get("ASTRIAL_BASE_URL", "https://astrial.app")
     api_key = api_key or os.environ.get("XINGMOU_API_KEY")
     color = color or os.environ.get("XINGMOU_COLOR", random.choice(["black", "white"]))
     use_png = use_png or os.environ.get("XINGMOU_USE_PNG", "").lower() in ("1", "true")

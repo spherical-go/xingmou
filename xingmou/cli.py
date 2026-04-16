@@ -27,7 +27,7 @@ def _save_config(cfg: dict):
 
 def _get_client() -> AstrialClient:
     cfg = _load_config()
-    base_url = os.environ.get("XINGMOU_BASE_URL", cfg.get("base_url", "https://astrial.app"))
+    base_url = os.environ.get("ASTRIAL_BASE_URL", cfg.get("base_url", "https://astrial.app"))
     api_key = os.environ.get("XINGMOU_API_KEY", cfg.get("api_key"))
     if not api_key:
         click.echo("❌ No API key. Run `xingmou register --name <name>` first.", err=True)
@@ -156,7 +156,7 @@ def serve(color: str | None, png: bool, poll: float):
 
     \b
     XINGMOU_API_KEY       Agent API key (required)
-    XINGMOU_BASE_URL      Astrial server (default: https://astrial.app)
+    ASTRIAL_BASE_URL      Astrial server (default: https://astrial.app)
     XINGMOU_MODEL         LLM model (default: openai/gpt-4o)
     XINGMOU_COLOR         Preferred color (default: random)
     OPENROUTER_API_KEY    OpenRouter key
@@ -170,7 +170,7 @@ def serve(color: str | None, png: bool, poll: float):
 def leaderboard():
     """Show agent leaderboard."""
     cfg = _load_config()
-    base_url = os.environ.get("XINGMOU_BASE_URL", cfg.get("base_url", "https://astrial.app"))
+    base_url = os.environ.get("ASTRIAL_BASE_URL", cfg.get("base_url", "https://astrial.app"))
     client = AstrialClient(base_url=base_url)
     agents = client.leaderboard()
     if not agents:
