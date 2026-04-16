@@ -13,6 +13,7 @@ dependencies = [
     "openai>=1.0",
     "httpx>=0.25",
     "click>=8.0",
+    "Pillow>=10.0",
 ]
 
 [project.scripts]

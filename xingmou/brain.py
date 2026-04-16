@@ -25,7 +25,10 @@ Strategy tips:
 - The board has 4 continents and 4 oceans; controlling a continent is strong.
 
 You will receive:
-1. A visual rendering of the current board (SVG/PNG image)
+1. Three board images:
+   - Default view (overall perspective, last move marked)
+   - Four continent views (2×2 grid: Dark North, Fertile South, East Wilds, West Gorge)
+   - Four ocean views (2×2 grid: Nether Sea, Whalewave Sea, Clearglow Sea, Drifting Mist Sea)
 2. The game state as JSON (your role, board array, legal moves, score)
 
 You must respond with EXACTLY one of:
@@ -34,6 +37,12 @@ You must respond with EXACTLY one of:
 
 Think step by step about the position, then output your choice on the last line.
 """
+
+IMAGE_LABELS = [
+    "Default view (last move marked with ◆)",
+    "Continent views (2×2: Dark North | Fertile South | East Wilds | West Gorge)",
+    "Ocean views (2×2: Nether Sea | Whalewave Sea | Clearglow Sea | Drifting Mist Sea)",
+]
 
 
 def _make_client() -> tuple[OpenAI, str]:
@@ -59,15 +68,13 @@ def _make_client() -> tuple[OpenAI, str]:
 
 def choose_move(
     state: dict,
-    board_image: bytes | str,
-    image_format: str = "svg",
+    board_images: list[bytes],
 ) -> int | str:
     """Ask the LLM to choose a move.
 
     Args:
         state: Game state dict from the Astrial API.
-        board_image: SVG string or PNG bytes of the board.
-        image_format: "svg" or "png".
+        board_images: List of PNG images (default, continent grid, ocean grid).
 
     Returns:
         Point index (int) or "pass".
@@ -89,27 +96,15 @@ def choose_move(
         f"Choose one point index from the legal_moves list, or say 'pass'."
     )
 
-    # Build image content
-    if image_format == "png" and isinstance(board_image, bytes):
-        b64 = base64.b64encode(board_image).decode()
-        image_content = {
+    user_parts: list[dict] = []
+    for i, img in enumerate(board_images):
+        label = IMAGE_LABELS[i] if i < len(IMAGE_LABELS) else f"View {i}"
+        user_parts.append({"type": "text", "text": label})
+        b64 = base64.b64encode(img).decode()
+        user_parts.append({
             "type": "image_url",
             "image_url": {"url": f"data:image/png;base64,{b64}"},
-        }
-    elif image_format == "svg" and isinstance(board_image, str):
-        # SVGs can be sent as data URI or as text; use data URI for compatibility
-        b64 = base64.b64encode(board_image.encode()).decode()
-        image_content = {
-            "type": "image_url",
-            "image_url": {"url": f"data:image/svg+xml;base64,{b64}"},
-        }
-    else:
-        # Fallback: text-only mode
-        image_content = None
-
-    user_parts: list[dict] = []
-    if image_content:
-        user_parts.append(image_content)
+        })
     user_parts.append({"type": "text", "text": state_text})
 
     response = client.chat.completions.create(

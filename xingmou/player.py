@@ -1,17 +1,43 @@
 """Game loop: poll state → think → act."""
 
+import io
 import time
 import sys
 
+from PIL import Image
+
 from .client import AstrialClient
 from .brain import choose_move
+
+CONTINENTS = ["dark-north", "fertile-south", "east-wilds", "west-gorge"]
+OCEANS = ["nether-sea", "whalewave-sea", "clearglow-sea", "drifting-mist-sea"]
+
+
+def _tile_2x2(images: list[bytes]) -> bytes:
+    """Combine 4 PNG images into a 2×2 grid."""
+    pils = [Image.open(io.BytesIO(b)) for b in images]
+    w, h = pils[0].size
+    grid = Image.new("RGB", (w * 2, h * 2))
+    for i, img in enumerate(pils):
+        grid.paste(img, ((i % 2) * w, (i // 2) * h))
+    buf = io.BytesIO()
+    grid.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _fetch_views(client: AstrialClient, game_id: str) -> list[bytes]:
+    """Fetch default + continent grid + ocean grid = 3 PNGs."""
+    default = client.board_png(game_id)
+    continent_imgs = [client.board_png(game_id, view=v) for v in CONTINENTS]
+    ocean_imgs = [client.board_png(game_id, view=v) for v in OCEANS]
+    return [default, _tile_2x2(continent_imgs), _tile_2x2(ocean_imgs)]
 
 
 def play_game(
     client: AstrialClient,
     game_id: str,
     poll_interval: float = 2.0,
-    use_png: bool = False,
+    **_kwargs,
 ):
     """Main game loop. Polls state and plays moves until game over."""
     print(f"🎮 Game {game_id}")
@@ -45,17 +71,14 @@ def play_game(
         print(f"   Score: B {score.get('black', 0):.3f} / W {score.get('white', 0):.3f}")
         print(f"   Legal moves: {len(legal)}")
 
-        # Get board image
-        if use_png:
-            board_image = client.board_png(game_id)
-            fmt = "png"
-        else:
-            board_image = client.board_svg(game_id)
-            fmt = "svg"
+        # Get board images (default + continent grid + ocean grid)
+        print("   📷 Fetching views...", end="", flush=True)
+        board_images = _fetch_views(client, game_id)
+        print(f" {len(board_images)} images")
 
         # Ask LLM
         print("   🧠 Thinking...", end="", flush=True)
-        move = choose_move(state, board_image, image_format=fmt)
+        move = choose_move(state, board_images)
         print(f" → {move}")
 
         # Execute
