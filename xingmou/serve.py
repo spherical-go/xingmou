@@ -142,6 +142,9 @@ def _resume_games(client: AstrialClient, agent_name: str,
     if not active:
         return 0
 
+    # Process playing games first so they aren't blocked by waiting ones
+    active.sort(key=lambda g: 0 if g.get("status") == "playing" else 1)
+
     log.info("Found %d in-progress game(s) to resume", len(active))
     for g in active:
         game_id = g["game_id"]
@@ -162,6 +165,15 @@ def _resume_games(client: AstrialClient, agent_name: str,
         except Exception as e:
             log.warning("Failed to re-join game %s: %s", game_id, e)
 
+        # For waiting games, wait for opponent before entering play loop
+        if g.get("status") == "waiting":
+            _update(state="waiting", current_game=game_id)
+            timeout = float(os.environ.get("XINGMOU_WAIT_TIMEOUT", "600"))
+            if not _wait_for_game_start(client, game_id, timeout):
+                log.warning("Timeout waiting for opponent in resumed game %s", game_id)
+                _update(current_game=None)
+                continue
+
         _update(state="playing", current_game=game_id)
         try:
             play_game(client, game_id, poll_interval=poll_interval, use_png=use_png)
@@ -170,6 +182,34 @@ def _resume_games(client: AstrialClient, agent_name: str,
         _update(current_game=None)
 
     return len(active)
+
+
+def _has_waiting_game(client: AstrialClient) -> bool:
+    """Check if agent already has a waiting game (no need to create another)."""
+    try:
+        games = client.my_games()
+        return any(g.get("status") == "waiting" for g in games)
+    except Exception:
+        return False
+
+
+def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float) -> bool:
+    """Block until game has started (opponent joined + move_count > 0 or your_turn).
+    Returns True if game is ready to play, False on timeout/game_over."""
+    wait_start = time.time()
+    while True:
+        try:
+            state = client.state(game_id)
+        except Exception:
+            time.sleep(3)
+            continue
+        if "game_over" in state:
+            return True  # game ended while waiting, let play_game handle it
+        if state.get("move_count", 0) > 0 or state.get("your_turn"):
+            return True
+        if time.time() - wait_start > timeout:
+            return False
+        time.sleep(3)
 
 
 def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
@@ -190,8 +230,12 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
                     log.warning("Failed to join %s: %s", game_id, e)
                     found = None
 
-            # 2. No joinable game — create one
+            # 2. No joinable game — only create if we don't already have a waiting one
             if not found:
+                if _has_waiting_game(client):
+                    log.info("Already have a waiting game, not creating another")
+                    time.sleep(15)
+                    continue
                 color = prefer_color or random.choice(["black", "white"])
                 result = client.create_game()
                 game_id = result["game_id"]
@@ -202,22 +246,11 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
 
             # 3. Wait for opponent
             timeout = float(os.environ.get("XINGMOU_WAIT_TIMEOUT", "600"))
-            wait_start = time.time()
-            while True:
-                try:
-                    state = client.state(game_id)
-                except Exception:
-                    time.sleep(3)
-                    continue
-                if "game_over" in state:
-                    break
-                if state.get("your_turn") is not None:
-                    if state.get("move_count", 0) > 0 or state.get("your_turn"):
-                        break
-                if time.time() - wait_start > timeout:
-                    log.warning("Timeout waiting for opponent in %s", game_id)
-                    break
-                time.sleep(3)
+            if not _wait_for_game_start(client, game_id, timeout):
+                log.warning("Timeout waiting for opponent in %s", game_id)
+                _update(state="idle", current_game=None)
+                time.sleep(10)
+                continue
 
             # 4. Play the game
             _update(state="playing")
