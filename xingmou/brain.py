@@ -24,6 +24,18 @@ Strategy tips:
 - Corners and edges don't exist on a sphere — think about continental regions instead.
 - The board has 4 continents and 4 oceans; controlling a continent is strong.
 
+Move priority (highest → lowest):
+1. Life-and-death / urgent points (急所) — saving or killing groups
+2. Pentagon centers — high-connectivity hubs, strategically dominant
+3. Pentagon vertices — strong influence points on the spherical topology
+4. Degree-4 points — solid positional moves
+5. Degree-3 points — lower priority, weaker influence
+
+Placement principles:
+- Spread stones in a staggered, varied pattern — avoid clustering.
+- Prevent the opponent from forming large connected territories.
+- Prioritize cutting opponent groups apart over passive expansion.
+
 You will receive:
 1. Three board images:
    - Default view (overall perspective, last move marked)
