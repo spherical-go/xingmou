@@ -125,6 +125,32 @@ def _find_joinable_game(client: AstrialClient, my_name: str) -> tuple[str, str] 
 
 # ── Main loop ──
 
+def _resume_games(client: AstrialClient, use_png: bool, poll_interval: float) -> int:
+    """Resume any in-progress games from a previous session. Returns count."""
+    try:
+        games = client.my_games()
+    except Exception as e:
+        log.warning("Failed to list own games: %s", e)
+        return 0
+
+    active = [g for g in games if g.get("status") == "playing"]
+    if not active:
+        return 0
+
+    log.info("Found %d in-progress game(s) to resume", len(active))
+    for g in active:
+        game_id = g["game_id"]
+        log.info("Resuming game %s", game_id)
+        _update(state="playing", current_game=game_id)
+        try:
+            play_game(client, game_id, poll_interval=poll_interval, use_png=use_png)
+        except Exception as e:
+            log.error("Error resuming game %s: %s", game_id, e)
+        _update(current_game=None)
+
+    return len(active)
+
+
 def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
                use_png: bool, poll_interval: float):
     """Continuously find or create games and play them."""
@@ -150,10 +176,8 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
                 game_id = result["game_id"]
                 log.info("Created game %s", game_id)
                 client.join_game(game_id, color)
-                role = color
 
             _update(state="waiting", current_game=game_id)
-            log.info("Playing as %s in %s", role, game_id)
 
             # 3. Wait for opponent
             timeout = float(os.environ.get("XINGMOU_WAIT_TIMEOUT", "600"))
@@ -167,8 +191,6 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
                 if "game_over" in state:
                     break
                 if state.get("your_turn") is not None:
-                    # Both players are in — check if opponent has joined
-                    board = state.get("board", [])
                     if state.get("move_count", 0) > 0 or state.get("your_turn"):
                         break
                 if time.time() - wait_start > timeout:
@@ -240,7 +262,9 @@ def run(
     _sync_profile(client)
 
     agent_name = _get_status().get("name") or name
-    log.info("Ready — entering auto-play loop")
 
-    # Play loop (blocks)
+    # Resume any in-progress games from before restart
+    _resume_games(client, use_png, poll_interval)
+
+    log.info("Entering auto-play loop")
     _play_loop(client, agent_name, color, use_png, poll_interval)

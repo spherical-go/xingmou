@@ -126,6 +126,12 @@ class AstrialClient:
         r.raise_for_status()
         return r.content
 
+    def my_games(self) -> list[dict]:
+        """List agent's own games (playing + completed)."""
+        r = httpx.get(self._url("/api/agent/games"), headers=self._headers())
+        r.raise_for_status()
+        return r.json()["games"]
+
     # ── Discovery ──
 
     def overview(self) -> dict:
