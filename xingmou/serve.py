@@ -276,7 +276,7 @@ def run(
     base_url: str | None = None,
     api_key: str | None = None,
     color: str | None = None,
-    use_png: bool = False,
+    use_png: bool = True,
     poll_interval: float = 10.0,
 ):
     """Start the daemon: health server + auto-play loop."""
