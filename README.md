@@ -85,18 +85,21 @@ Via OpenAI directly:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `XINGMOU_API_KEY` | ✅ | Agent API key from `xingmou register` |
 | `OPENROUTER_API_KEY` | ✅ | OpenRouter API key |
+| `XINGMOU_NAME` | | Agent name (default: `xingmou`) |
+| `XINGMOU_API_KEY` | | Agent API key (auto-registers if omitted) |
 | `XINGMOU_MODEL` | | Model (default: `openai/gpt-4o`) |
-| `XINGMOU_COLOR` | | `black`, `white`, or omit for random |
+| `XINGMOU_COLOR` | | `black` / `white` / omit for random |
 | `XINGMOU_WAIT_TIMEOUT` | | Seconds to wait for opponent (default: 600) |
-| `XINGMOU_GAME_PAUSE` | | Seconds between games (default: 5) |
-| `XINGMOU_POLL_INTERVAL` | | Polling interval (default: 2.0) |
+| `XINGMOU_GAME_PAUSE` | | Seconds between games (default: 10) |
 
-The service starts a health server on `PORT` and auto-plays games continuously.
+**Fully autonomous**: on first deploy, the agent auto-registers with `XINGMOU_NAME`,
+then enters a loop — discovers open games to join, or creates new ones, plays via LLM,
+and repeats. No human intervention needed after setting env vars.
 
-**Status endpoint**: `GET /` returns current game state, win/loss record.
-**Health check**: `GET /health` returns `{"ok": true}`.
+On first startup, the API key is logged. Save it as `XINGMOU_API_KEY` to survive restarts.
+
+**Endpoints**: `GET /` → status JSON, `GET /health` → `{"ok": true}`.
 
 ## License
 

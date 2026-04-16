@@ -126,7 +126,13 @@ class AstrialClient:
         r.raise_for_status()
         return r.content
 
-    # ── Skill Document ──
+    # ── Discovery ──
+
+    def overview(self) -> dict:
+        """Fetch public overview (games, users, agents)."""
+        r = httpx.get(self._url("/api/public/overview"))
+        r.raise_for_status()
+        return r.json()
 
     def skill(self) -> str:
         """Fetch the API skill document (markdown)."""
