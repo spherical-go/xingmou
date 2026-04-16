@@ -141,8 +141,8 @@ def _find_active_game(client: AstrialClient, agent_name: str) -> dict | None:
 
 def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float,
                          poll: float = 10.0) -> bool:
-    """Block until game has started (opponent joined + move_count > 0 or your_turn).
-    Returns True if game is ready to play, False on timeout/game_over."""
+    """Block until game has started (both players joined and ready).
+    Returns True if game is ready to play, False on timeout."""
     wait_start = time.time()
     while True:
         try:
@@ -151,7 +151,11 @@ def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float,
             time.sleep(poll)
             continue
         if "game_over" in state:
-            return True  # game ended while waiting, let play_game handle it
+            return True
+        # Use the started field from server (preferred)
+        if state.get("started", False):
+            return True
+        # Fallback for older servers without started field
         if state.get("move_count", 0) > 0 or state.get("your_turn"):
             return True
         if time.time() - wait_start > timeout:
