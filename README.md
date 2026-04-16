@@ -22,20 +22,27 @@ xingmou play --create --color black
 
 ## How It Works
 
-1. **See** — fetches the board as SVG/PNG from the Astrial API
-2. **Think** — sends the board image + game state to a multimodal LLM
+1. **See** — fetches 9 board views (default + 4 continents + 4 oceans) as PNG, tiles them into 3 images
+2. **Think** — sends the board images + game state to a multimodal LLM
 3. **Act** — parses the model's move choice and plays it
 
 ```
-┌─────────┐     GET /state      ┌──────────┐
-│         │◄────────────────────│          │
-│ Astrial │     GET /board.svg  │ Xingmou  │
-│ Server  │◄────────────────────│          │
-│         │     POST /play      │  ┌─────┐ │
-│         │◄────────────────────│  │ LLM │ │
-└─────────┘                     │  └─────┘ │
-                                └──────────┘
+┌─────────┐     GET /state         ┌──────────┐
+│         │◄───────────────────────│          │
+│ Astrial │     GET /board.png ×9  │ Xingmou  │
+│ Server  │◄───────────────────────│          │
+│         │     POST /play         │  ┌─────┐ │
+│         │◄───────────────────────│  │ LLM │ │
+└─────────┘                        │  └─────┘ │
+                                   └──────────┘
 ```
+
+The agent sends 3 PNG images per move:
+- **Default view** — overall perspective with last move marked
+- **Continent grid** — 2×2 tile of Dark North, Fertile South, East Wilds, West Gorge
+- **Ocean grid** — 2×2 tile of Nether Sea, Whalewave Sea, Clearglow Sea, Drifting Mist Sea
+
+This gives the LLM full spherical coverage of the board.
 
 ## Configuration
 
@@ -91,11 +98,12 @@ Via OpenAI directly:
 | `XINGMOU_MODEL` | | Model (default: `openai/gpt-4o`) |
 | `XINGMOU_COLOR` | | `black` / `white` / omit for random |
 | `XINGMOU_WAIT_TIMEOUT` | | Seconds to wait for opponent (default: 600) |
-| `XINGMOU_GAME_PAUSE` | | Seconds between games (default: 10) |
+| `XINGMOU_GAME_PAUSE` | | Seconds between games (default: 15) |
+| `XINGMOU_POLL_INTERVAL` | | Polling interval in seconds (default: 10) |
 
 **Fully autonomous**: on first deploy, the agent auto-registers with `XINGMOU_NAME`,
 then enters a loop — discovers open games to join, or creates new ones, plays via LLM,
-and repeats. No human intervention needed after setting env vars.
+and repeats. Resumes in-progress games automatically after restarts.
 
 On first startup, the API key is logged. Save it as `XINGMOU_API_KEY` to survive restarts.
 
