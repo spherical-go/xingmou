@@ -142,8 +142,10 @@ def _find_active_game(client: AstrialClient, agent_name: str) -> dict | None:
 def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float,
                          poll: float = 10.0) -> bool:
     """Block until game has started (both players joined and ready).
-    Returns True if game is ready to play, False on timeout."""
+    Returns True if game is ready to play, False on timeout.
+    Returns False early if a higher-priority (playing) game appears."""
     wait_start = time.time()
+    check_count = 0
     while True:
         try:
             state = client.state(game_id)
@@ -166,6 +168,17 @@ def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float,
         if time.time() - wait_start > timeout:
             log.warning("timeout waiting for %s after %.0fs", game_id[:8], timeout)
             return False
+        # Every 3 polls, check if a playing game needs attention
+        check_count += 1
+        if check_count % 3 == 0:
+            try:
+                games = client.my_games()
+                if any(g.get("status") == "playing" and g["game_id"] != game_id
+                       for g in games):
+                    log.info("playing game detected, leaving wait for %s", game_id[:8])
+                    return False
+            except Exception:
+                pass
         time.sleep(poll)
 
 
