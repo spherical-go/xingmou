@@ -39,9 +39,9 @@ Think step by step about the position, then output your choice on the last line.
 """
 
 IMAGE_LABELS = [
-    "Default view (last move marked with ◆)",
-    "Continent views (2×2: Dark North | Fertile South | East Wilds | West Gorge)",
-    "Ocean views (2×2: Nether Sea | Whalewave Sea | Clearglow Sea | Drifting Mist Sea)",
+    "Default view (last move marked with diamond)",
+    "Four continent views (labeled in image)",
+    "Four ocean views (labeled in image)",
 ]
 
 

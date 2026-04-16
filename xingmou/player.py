@@ -4,33 +4,60 @@ import io
 import time
 import sys
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from .client import AstrialClient
 from .brain import choose_move
 
-CONTINENTS = ["dark-north", "fertile-south", "east-wilds", "west-gorge"]
-OCEANS = ["nether-sea", "whalewave-sea", "clearglow-sea", "drifting-mist-sea"]
+CONTINENTS = [
+    ("dark-north", "Dark North"),
+    ("fertile-south", "Fertile South"),
+    ("east-wilds", "East Wilds"),
+    ("west-gorge", "West Gorge"),
+]
+OCEANS = [
+    ("nether-sea", "Nether Sea"),
+    ("whalewave-sea", "Whalewave Sea"),
+    ("clearglow-sea", "Clearglow Sea"),
+    ("drifting-mist-sea", "Drifting Mist Sea"),
+]
+
+LABEL_H = 32  # height of the label bar above each tile
 
 
-def _tile_2x2(images: list[bytes]) -> bytes:
-    """Combine 4 PNG images into a 2×2 grid."""
+def _tile_2x2(images: list[bytes], labels: list[str]) -> bytes:
+    """Combine 4 PNG images into a labeled 2×2 grid."""
     pils = [Image.open(io.BytesIO(b)) for b in images]
     w, h = pils[0].size
-    grid = Image.new("RGB", (w * 2, h * 2))
-    for i, img in enumerate(pils):
-        grid.paste(img, ((i % 2) * w, (i // 2) * h))
+    cell_h = LABEL_H + h
+    grid = Image.new("RGB", (w * 2, cell_h * 2), (0, 0, 0))
+    draw = ImageDraw.Draw(grid)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+    except (OSError, IOError):
+        font = ImageFont.load_default()
+    for i, (img, label) in enumerate(zip(pils, labels)):
+        x = (i % 2) * w
+        y = (i // 2) * cell_h
+        # Draw label
+        bbox = draw.textbbox((0, 0), label, font=font)
+        tw = bbox[2] - bbox[0]
+        draw.text(((x + (w - tw) // 2), y + 4), label, fill=(255, 255, 255), font=font)
+        # Paste image below label
+        grid.paste(img, (x, y + LABEL_H))
     buf = io.BytesIO()
     grid.save(buf, format="PNG")
     return buf.getvalue()
 
 
 def _fetch_views(client: AstrialClient, game_id: str) -> list[bytes]:
-    """Fetch default + continent grid + ocean grid = 3 PNGs."""
+    """Fetch default + labeled continent grid + labeled ocean grid = 3 PNGs."""
     default = client.board_png(game_id)
-    continent_imgs = [client.board_png(game_id, view=v) for v in CONTINENTS]
-    ocean_imgs = [client.board_png(game_id, view=v) for v in OCEANS]
-    return [default, _tile_2x2(continent_imgs), _tile_2x2(ocean_imgs)]
+    c_imgs = [client.board_png(game_id, view=slug) for slug, _ in CONTINENTS]
+    o_imgs = [client.board_png(game_id, view=slug) for slug, _ in OCEANS]
+    c_labels = [name for _, name in CONTINENTS]
+    o_labels = [name for _, name in OCEANS]
+    return [default, _tile_2x2(c_imgs, c_labels), _tile_2x2(o_imgs, o_labels)]
 
 
 def play_game(
