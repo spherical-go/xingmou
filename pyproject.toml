@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xingmou"
+version = "0.1.0"
+description = "星眸 — LLM agent for Astrial (spherical Go)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.0",
+    "httpx>=0.25",
+    "click>=8.0",
+]
+
+[project.scripts]
+xingmou = "xingmou.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["xingmou*"]
