@@ -139,7 +139,8 @@ def _find_active_game(client: AstrialClient, agent_name: str) -> dict | None:
     return active[0]
 
 
-def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float) -> bool:
+def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float,
+                         poll: float = 10.0) -> bool:
     """Block until game has started (opponent joined + move_count > 0 or your_turn).
     Returns True if game is ready to play, False on timeout/game_over."""
     wait_start = time.time()
@@ -147,7 +148,7 @@ def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float) ->
         try:
             state = client.state(game_id)
         except Exception:
-            time.sleep(3)
+            time.sleep(poll)
             continue
         if "game_over" in state:
             return True  # game ended while waiting, let play_game handle it
@@ -155,7 +156,7 @@ def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float) ->
             return True
         if time.time() - wait_start > timeout:
             return False
-        time.sleep(3)
+        time.sleep(poll)
 
 
 def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
@@ -176,7 +177,7 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
                 role = "black" if bu == agent_name else "white" if wu == agent_name else None
                 if not role:
                     log.warning("Cannot determine role in game %s, skipping", game_id)
-                    time.sleep(15)
+                    time.sleep(30)
                     continue
 
                 log.info("Resuming game %s as %s (status=%s)", game_id, role, existing.get("status"))
@@ -208,10 +209,10 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
 
             # 3. Wait for opponent / game to be ready
             timeout = float(os.environ.get("XINGMOU_WAIT_TIMEOUT", "600"))
-            if not _wait_for_game_start(client, game_id, timeout):
+            if not _wait_for_game_start(client, game_id, timeout, poll=poll_interval):
                 log.warning("Timeout waiting for opponent in %s", game_id)
                 _update(state="idle", current_game=None)
-                time.sleep(10)
+                time.sleep(20)
                 continue
 
             # 4. Play the game
@@ -222,7 +223,7 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
             _update(state="idle", current_game=None)
             _sync_profile(client)
 
-            pause = float(os.environ.get("XINGMOU_GAME_PAUSE", "10"))
+            pause = float(os.environ.get("XINGMOU_GAME_PAUSE", "15"))
             time.sleep(pause)
 
         except KeyboardInterrupt:
@@ -232,7 +233,7 @@ def _play_loop(client: AstrialClient, agent_name: str, prefer_color: str | None,
         except Exception as e:
             log.error("Error in game loop: %s", e)
             _update(state="error", error=str(e))
-            time.sleep(15)
+            time.sleep(30)
 
 
 def _sync_profile(client: AstrialClient):
@@ -253,7 +254,7 @@ def run(
     api_key: str | None = None,
     color: str | None = None,
     use_png: bool = False,
-    poll_interval: float = 2.0,
+    poll_interval: float = 10.0,
 ):
     """Start the daemon: health server + auto-play loop."""
     logging.basicConfig(

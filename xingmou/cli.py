@@ -80,7 +80,7 @@ def profile():
 @click.option("--join", "game_id", default=None, help="Join an existing game by ID")
 @click.option("--color", type=click.Choice(["black", "white"]), required=True, help="Play as black or white")
 @click.option("--png", is_flag=True, help="Use PNG instead of SVG for board images")
-@click.option("--poll", default=2.0, help="Polling interval in seconds")
+@click.option("--poll", default=10.0, help="Polling interval in seconds")
 def play(create: bool, game_id: str | None, color: str, png: bool, poll: float):
     """Play a game of Astrial."""
     if not create and not game_id:
@@ -148,7 +148,7 @@ def watch(game_id: str):
 @main.command()
 @click.option("--color", type=click.Choice(["black", "white"]), default=None, help="Preferred color (random if omitted)")
 @click.option("--png", is_flag=True, help="Use PNG instead of SVG")
-@click.option("--poll", default=2.0, help="Polling interval in seconds")
+@click.option("--poll", default=10.0, help="Polling interval in seconds")
 def serve(color: str | None, png: bool, poll: float):
     """Run as a daemon: auto-play loop + health server.
 
