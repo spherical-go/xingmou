@@ -189,6 +189,7 @@ def serve(color: str | None, png: bool, poll: float):
     <NAME>_BASE_URL       Per-provider base URL override
     <NAME>_MODEL          Per-provider model override
     XINGMOU_RESIGN_MARGIN Auto-resign when behind by this area share (default: 0.05, 0 disables)
+    XINGMOU_RESIGN_STREAK Consecutive turns behind before resigning (default: 3)
     XINGMOU_LLM_TIMEOUT   LLM request timeout in seconds (default: 120)
     XINGMOU_LLM_RETRIES   Retries per provider (default: 1)
     XINGMOU_COLOR         Preferred color (default: random)

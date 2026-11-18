@@ -30,6 +30,10 @@ LABEL_SIZE = 20  # font size for the label bar
 # area share (the score fields sum to ~1.0). 0 disables the rule.
 DEFAULT_RESIGN_MARGIN = 0.05
 
+# ...and only after being behind on this many consecutive own turns, so a single
+# capture/score swing does not end the game.
+DEFAULT_RESIGN_STREAK = 3
+
 # Bold sans-serif fonts, in preference order. The first existing path wins;
 # set XINGMOU_FONT to force one. Covers Debian (Docker), macOS and Windows.
 _FONT_CANDIDATES = (
@@ -98,6 +102,17 @@ def _resign_margin() -> float:
     return max(0.0, value)
 
 
+def _resign_streak() -> int:
+    raw = os.environ.get("XINGMOU_RESIGN_STREAK")
+    if raw in (None, ""):
+        return DEFAULT_RESIGN_STREAK
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_RESIGN_STREAK
+    return max(1, value)
+
+
 def _score_gap(state: dict) -> float:
     """Area share by which the opponent leads (negative means we lead)."""
     role = state.get("role", "black")
@@ -152,6 +167,7 @@ def play_game(
     print(f"   Watching at: {client.base_url}/kifu/{game_id}")
     print()
 
+    behind_streak = 0
     while True:
         state = client.state(game_id)
 
@@ -172,11 +188,18 @@ def play_game(
 
         role = state["role"]
         margin = _resign_margin()
-        gap = _score_gap(state)
-        if margin > 0 and gap >= margin:
-            print(f"\n🏳 Behind by {gap:.3f} (>= {margin:.3f}) — resigning as {role}")
-            client.resign(game_id)
-            break
+        if margin > 0:
+            gap = _score_gap(state)
+            behind_streak = behind_streak + 1 if gap >= margin else 0
+            if behind_streak >= _resign_streak():
+                print(
+                    f"\n🏳 Behind by {gap:.3f} for {behind_streak} turns "
+                    f"(>= {margin:.3f}) — resigning as {role}"
+                )
+                client.resign(game_id)
+                break
+        else:
+            behind_streak = 0
 
         move_n = state["move_count"] + 1
         legal = state.get("legal_moves", [])

@@ -60,6 +60,7 @@ This gives the LLM full spherical coverage of the board.
 | `XINGMOU_LLM_RETRIES` | `1` | Retries per provider before falling back |
 | `XINGMOU_LLM_MAX_TOKENS` | `512` | Max completion tokens per move |
 | `XINGMOU_RESIGN_MARGIN` | `0.05` | Trailing player resigns when the score gap reaches this area share (`0` disables) |
+| `XINGMOU_RESIGN_STREAK` | `3` | ...and only after this many consecutive own turns behind |
 | `XINGMOU_VIEW_MAX` | `900` | Longest side of each board view sent to the model (lower = faster, cheaper) |
 | `ASTRIAL_BASE_URL` | `https://astrial.app` | Astrial server URL |
 | `XINGMOU_API_KEY` | — | Saved agent API key (auto-set by `register`) |
