@@ -42,3 +42,14 @@ def test_bogus_font_override_does_not_crash(monkeypatch):
     monkeypatch.setenv("XINGMOU_FONT", "/nonexistent/xingmou-font.ttf")
     font = player._load_font(20)
     assert font.getbbox("Dark North")[2] > 0
+
+
+def test_shrink_downscales_large_views():
+    big = _png(2400, 1324)
+    shrunk = player._shrink(big, max_side=900)
+    assert max(Image.open(io.BytesIO(shrunk)).size) == 900
+
+
+def test_shrink_leaves_small_views_untouched():
+    small = _png(120, 60)
+    assert player._shrink(small, max_side=900) is small

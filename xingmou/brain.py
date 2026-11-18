@@ -1,9 +1,18 @@
-"""LLM-based move selection with vision support."""
+"""LLM-based move selection with vision support.
+
+The prompt is sent to the first configured provider that answers; see
+``providers.py`` for how several OpenAI-compatible endpoints are bound.
+"""
 
 import base64
+import logging
 import os
 
 from openai import OpenAI
+
+from .providers import Provider, resolve_providers
+
+log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
 You are 星眸 (Xingmou), an AI playing 星逐 (Astrial) — spherical Go on a \
@@ -56,49 +65,37 @@ IMAGE_LABELS = [
     "Four ocean views (labeled in image)",
 ]
 
-
-def _make_client() -> tuple[OpenAI, str]:
-    """Create an OpenAI-compatible client based on available env vars."""
-    model = os.environ.get("XINGMOU_MODEL", "openai/gpt-4o")
-
-    if os.environ.get("OPENROUTER_API_KEY"):
-        return OpenAI(
-            api_key=os.environ["OPENROUTER_API_KEY"],
-            base_url="https://openrouter.ai/api/v1",
-        ), model
-
-    if os.environ.get("OPENAI_API_KEY"):
-        # Strip provider prefix for direct OpenAI usage
-        if model.startswith("openai/"):
-            model = model[len("openai/"):]
-        return OpenAI(), model
-
-    raise RuntimeError(
-        "Set OPENROUTER_API_KEY or OPENAI_API_KEY environment variable"
-    )
+DEFAULT_LLM_TIMEOUT = 120.0
+DEFAULT_LLM_RETRIES = 1
+DEFAULT_LLM_MAX_TOKENS = 512
 
 
-def choose_move(
-    state: dict,
-    board_images: list[bytes],
-) -> int | str:
-    """Ask the LLM to choose a move.
+def _env_float(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, ""))
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
-    Args:
-        state: Game state dict from the Astrial API.
-        board_images: List of PNG images (default, continent grid, ocean grid).
 
-    Returns:
-        Point index (int) or "pass".
-    """
-    client, model = _make_client()
+def _env_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, ""))
+    except ValueError:
+        return default
+    return value if value >= 0 else default
 
+
+def _max_tokens() -> int:
+    return _env_int("XINGMOU_LLM_MAX_TOKENS", DEFAULT_LLM_MAX_TOKENS) or DEFAULT_LLM_MAX_TOKENS
+
+
+def _state_text(state: dict) -> str:
     legal = state.get("legal_moves", [])
     role = state.get("role", "?")
     score = state.get("score", {})
     move_count = state.get("move_count", 0)
-
-    state_text = (
+    return (
         f"You are playing as {role}.\n"
         f"Move #{move_count + 1}. It is your turn.\n"
         f"Score — Black: {score.get('black', 0):.3f}, "
@@ -108,28 +105,84 @@ def choose_move(
         f"Choose one point index from the legal_moves list, or say 'pass'."
     )
 
-    user_parts: list[dict] = []
+
+def _user_parts(state: dict, board_images: list[bytes]) -> list[dict]:
+    parts: list[dict] = []
     for i, img in enumerate(board_images):
         label = IMAGE_LABELS[i] if i < len(IMAGE_LABELS) else f"View {i}"
-        user_parts.append({"type": "text", "text": label})
+        parts.append({"type": "text", "text": label})
         b64 = base64.b64encode(img).decode()
-        user_parts.append({
+        parts.append({
             "type": "image_url",
             "image_url": {"url": f"data:image/png;base64,{b64}"},
         })
-    user_parts.append({"type": "text", "text": state_text})
+    parts.append({"type": "text", "text": _state_text(state)})
+    return parts
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_parts},
-        ],
-        temperature=0.3,
-        max_tokens=512,
+
+def _build_messages(state: dict, board_images: list[bytes]) -> list[dict]:
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": _user_parts(state, board_images)},
+    ]
+
+
+def _make_client(provider: Provider) -> OpenAI:
+    return OpenAI(
+        api_key=provider.api_key,
+        base_url=provider.base_url,
+        timeout=_env_float("XINGMOU_LLM_TIMEOUT", DEFAULT_LLM_TIMEOUT),
+        max_retries=_env_int("XINGMOU_LLM_RETRIES", DEFAULT_LLM_RETRIES),
     )
 
-    return _parse_response(response.choices[0].message.content or "", legal)
+
+def _complete(provider: Provider, messages: list[dict]) -> str:
+    """Run one chat completion on `provider` and return the message text."""
+    client = _make_client(provider)
+    response = client.chat.completions.create(
+        model=provider.model,
+        messages=messages,
+        temperature=0.3,
+        max_tokens=_max_tokens(),
+        # TokenPlus replies in SSE unless `stream` is explicitly false.
+        stream=False,
+    )
+    return response.choices[0].message.content or ""
+
+
+def choose_move(
+    state: dict,
+    board_images: list[bytes],
+) -> int | str:
+    """Ask the LLM to choose a move, falling back across bound providers.
+
+    Args:
+        state: Game state dict from the Astrial API.
+        board_images: List of PNG images (default, continent grid, ocean grid).
+
+    Returns:
+        Point index (int) or "pass".
+    """
+    legal = state.get("legal_moves", [])
+    messages = _build_messages(state, board_images)
+    providers = resolve_providers()
+
+    last_error: Exception | None = None
+    for provider in providers:
+        try:
+            text = _complete(provider, messages)
+        except Exception as exc:  # network, auth, quota, model id, ...
+            last_error = exc
+            log.warning("LLM provider %s failed: %s", provider, exc)
+            continue
+        log.info("move chosen via %s", provider)
+        return _parse_response(text, legal)
+
+    raise RuntimeError(
+        "所有 LLM provider 都调用失败（依次尝试了 "
+        + ", ".join(str(p) for p in providers)
+        + "）"
+    ) from last_error
 
 
 def _parse_response(text: str, legal_moves: list[int]) -> int | str:

@@ -14,6 +14,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from .client import AstrialClient
 from .player import play_game
+from .providers import resolve_providers
 
 log = logging.getLogger("xingmou")
 
@@ -26,6 +27,7 @@ _status = {
     "games_won": 0,
     "current_game": None,
     "error": None,
+    "providers": [],
 }
 _lock = threading.Lock()
 
@@ -293,6 +295,15 @@ def run(
     color = color or os.environ.get("XINGMOU_COLOR")
     use_png = use_png or os.environ.get("XINGMOU_USE_PNG", "").lower() in ("1", "true")
     poll_interval = float(os.environ.get("XINGMOU_POLL_INTERVAL", str(poll_interval)))
+
+    # Fail fast on a broken LLM config instead of discovering it mid-game.
+    try:
+        providers = resolve_providers()
+    except (RuntimeError, ValueError) as exc:
+        log.error("LLM provider 配置错误: %s", exc)
+        raise SystemExit(1) from exc
+    log.info("LLM providers (fallback order): %s", " -> ".join(str(p) for p in providers))
+    _update(providers=[{"name": p.name, "model": p.model} for p in providers])
 
     # Health server (start early so Railway sees it alive)
     port = int(os.environ.get("PORT", "8080"))

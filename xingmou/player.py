@@ -26,6 +26,10 @@ OCEANS = [
 LABEL_H = 32  # height of the label bar above each tile
 LABEL_SIZE = 20  # font size for the label bar
 
+# The trailing player resigns once the opponent is this far ahead, expressed in
+# area share (the score fields sum to ~1.0). 0 disables the rule.
+DEFAULT_RESIGN_MARGIN = 0.05
+
 # Bold sans-serif fonts, in preference order. The first existing path wins;
 # set XINGMOU_FONT to force one. Covers Debian (Docker), macOS and Windows.
 _FONT_CANDIDATES = (
@@ -83,6 +87,49 @@ def _tile_2x2(images: list[bytes], labels: list[str]) -> bytes:
     return buf.getvalue()
 
 
+def _resign_margin() -> float:
+    raw = os.environ.get("XINGMOU_RESIGN_MARGIN")
+    if raw in (None, ""):
+        return DEFAULT_RESIGN_MARGIN
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_RESIGN_MARGIN
+    return max(0.0, value)
+
+
+def _score_gap(state: dict) -> float:
+    """Area share by which the opponent leads (negative means we lead)."""
+    role = state.get("role", "black")
+    score = state.get("score", {})
+    opponent = "white" if role == "black" else "black"
+    return float(score.get(opponent, 0.0)) - float(score.get(role, 0.0))
+
+
+def _view_max_side() -> int:
+    try:
+        value = int(os.environ.get("XINGMOU_VIEW_MAX", "900"))
+    except ValueError:
+        return 900
+    return value if value > 0 else 900
+
+
+def _shrink(png: bytes, max_side: int | None = None) -> bytes:
+    """Downscale a board view so the request stays fast and cheap.
+
+    The server renders 1200×630 views; a 2×2 grid is 2400×1324, so three
+    full-size PNGs cost ~1 MB per move and dominate LLM latency.
+    """
+    max_side = max_side or _view_max_side()
+    image = Image.open(io.BytesIO(png))
+    if max(image.size) <= max_side:
+        return png
+    image.thumbnail((max_side, max_side))
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def _fetch_views(client: AstrialClient, game_id: str) -> list[bytes]:
     """Fetch default + labeled continent grid + labeled ocean grid = 3 PNGs."""
     default = client.board_png(game_id)
@@ -90,7 +137,8 @@ def _fetch_views(client: AstrialClient, game_id: str) -> list[bytes]:
     o_imgs = [client.board_png(game_id, view=slug) for slug, _ in OCEANS]
     c_labels = [name for _, name in CONTINENTS]
     o_labels = [name for _, name in OCEANS]
-    return [default, _tile_2x2(c_imgs, c_labels), _tile_2x2(o_imgs, o_labels)]
+    views = [default, _tile_2x2(c_imgs, c_labels), _tile_2x2(o_imgs, o_labels)]
+    return [_shrink(view) for view in views]
 
 
 def play_game(
@@ -123,6 +171,13 @@ def play_game(
             continue
 
         role = state["role"]
+        margin = _resign_margin()
+        gap = _score_gap(state)
+        if margin > 0 and gap >= margin:
+            print(f"\n🏳 Behind by {gap:.3f} (>= {margin:.3f}) — resigning as {role}")
+            client.resign(game_id)
+            break
+
         move_n = state["move_count"] + 1
         legal = state.get("legal_moves", [])
         score = state.get("score", {})

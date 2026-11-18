@@ -181,10 +181,17 @@ def serve(color: str | None, png: bool, poll: float):
     \b
     XINGMOU_API_KEY       Agent API key (required)
     ASTRIAL_BASE_URL      Astrial server (default: https://astrial.app)
-    XINGMOU_MODEL         LLM model (default: openai/gpt-4o)
-    XINGMOU_COLOR         Preferred color (default: random)
+    TOKENPLUS_API_KEY     TokenPlus key (default first provider)
     OPENROUTER_API_KEY    OpenRouter key
-    OPENAI_API_KEY        OpenAI key (alternative)
+    OPENAI_API_KEY        OpenAI key
+    XINGMOU_PROVIDERS     Provider order (default: tokenplus,openrouter,openai)
+    XINGMOU_MODEL         Model for providers without <NAME>_MODEL
+    <NAME>_BASE_URL       Per-provider base URL override
+    <NAME>_MODEL          Per-provider model override
+    XINGMOU_RESIGN_MARGIN Auto-resign when behind by this area share (default: 0.05, 0 disables)
+    XINGMOU_LLM_TIMEOUT   LLM request timeout in seconds (default: 120)
+    XINGMOU_LLM_RETRIES   Retries per provider (default: 1)
+    XINGMOU_COLOR         Preferred color (default: random)
     PORT                  Health server port (default: 8080)
     """
     serve_run(color=color, use_png=png, poll_interval=poll)

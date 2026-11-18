@@ -10,10 +10,11 @@ An LLM-powered agent that plays [星逐 Astrial](https://astrial.app) — spheri
 # Install
 pip install -e .
 
-# Set your API key
-export OPENROUTER_API_KEY="sk-..."
-# or
-export OPENAI_API_KEY="sk-..."
+# Bind one or more LLM providers (TokenPlus / OpenRouter / OpenAI)
+export TOKENPLUS_API_KEY="sk-..."
+export XINGMOU_MODEL="gpt-4o"          # model for the bound provider(s)
+# or: export OPENROUTER_API_KEY="sk-or-..."
+# or: export OPENAI_API_KEY="sk-..."
 
 # Register and play
 xingmou register --name my-bot
@@ -48,13 +49,26 @@ This gives the LLM full spherical coverage of the board.
 
 | Env Var | Default | Description |
 |---------|---------|-------------|
-| `OPENROUTER_API_KEY` | — | OpenRouter API key (supports GPT-4o, Claude, Gemini, etc.) |
-| `OPENAI_API_KEY` | — | OpenAI API key (direct) |
-| `XINGMOU_MODEL` | `openai/gpt-4o` | Model identifier |
+| `XINGMOU_PROVIDERS` | `tokenplus,openrouter,openai` | Providers to bind, tried in order |
+| `TOKENPLUS_API_KEY` | — | TokenPlus key (`https://api.tokenplus.cn/v1`) |
+| `OPENROUTER_API_KEY` | — | OpenRouter key |
+| `OPENAI_API_KEY` | — | OpenAI key (direct) |
+| `<NAME>_MODEL` | per provider | Model for provider `NAME` (e.g. `TOKENPLUS_MODEL`) |
+| `<NAME>_BASE_URL` | per provider | Base URL for provider `NAME` (any OpenAI-compatible endpoint) |
+| `XINGMOU_MODEL` | per provider | Model for providers without their own `<NAME>_MODEL` |
+| `XINGMOU_LLM_TIMEOUT` | `120` | Seconds per LLM request |
+| `XINGMOU_LLM_RETRIES` | `1` | Retries per provider before falling back |
+| `XINGMOU_LLM_MAX_TOKENS` | `512` | Max completion tokens per move |
+| `XINGMOU_RESIGN_MARGIN` | `0.05` | Trailing player resigns when the score gap reaches this area share (`0` disables) |
+| `XINGMOU_VIEW_MAX` | `900` | Longest side of each board view sent to the model (lower = faster, cheaper) |
 | `ASTRIAL_BASE_URL` | `https://astrial.app` | Astrial server URL |
 | `XINGMOU_API_KEY` | — | Saved agent API key (auto-set by `register`) |
 | `XINGMOU_HTTP_TIMEOUT` | `30` | Per-request timeout in seconds for Astrial API calls |
 | `XINGMOU_FONT` | auto-detect | TrueType font path for the board-view labels |
+
+Komi (0.025 for White) is still provisional and has to be tuned through real
+games. `XINGMOU_RESIGN_MARGIN` compares the live area share *before* komi, so
+changing komi does not change when an agent resigns.
 
 ## Commands
 
@@ -75,16 +89,51 @@ xingmou watch GAME_ID
 xingmou profile
 ```
 
-## Model Support
+## LLM Providers
 
-Via OpenRouter (recommended — one key, many models):
-- `openai/gpt-4o` — best vision + reasoning balance
-- `anthropic/claude-sonnet-4` — strong spatial reasoning
-- `google/gemini-2.5-flash` — fast + cheap
+Providers are bound by environment variables and tried in order; a failed call
+(transport, auth, quota, unknown model) falls through to the next one. Only
+providers with a key set are used, so binding extra providers is always safe.
 
-Via OpenAI directly:
-- `gpt-4o`
-- `gpt-4o-mini`
+| Provider | Key | Base URL | Default model |
+|----------|-----|----------|---------------|
+| `tokenplus` | `TOKENPLUS_API_KEY` | `https://api.tokenplus.cn/v1` | `gpt-4o` |
+| `openrouter` | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` | `openai/gpt-4o` |
+| `openai` | `OPENAI_API_KEY` | `https://api.openai.com/v1` | `gpt-4o` |
+
+```bash
+# TokenPlus primary, OpenRouter as fallback
+export TOKENPLUS_API_KEY="sk-..."      # https://www.tokenplus.cn
+export OPENROUTER_API_KEY="sk-or-..."
+export XINGMOU_PROVIDERS="tokenplus,openrouter"
+export TOKENPLUS_MODEL="gpt-4o"
+export OPENROUTER_MODEL="openai/gpt-4o"
+```
+
+Any other OpenAI-compatible endpoint can be bound the same way:
+
+```bash
+export XINGMOU_PROVIDERS="myrelay"
+export MYRELAY_API_KEY="..."
+export MYRELAY_BASE_URL="https://relay.example.com/v1"
+export MYRELAY_MODEL="gpt-4o"
+```
+
+Request bodies set `stream: false` explicitly because TokenPlus streams by
+default, which the non-streaming response parser cannot read. Model identifiers
+are per provider: TokenPlus/OpenAI take bare ids (`gpt-4o`), OpenRouter takes
+slugs (`openai/gpt-4o`); `XINGMOU_MODEL` is normalised for the former.
+
+`GET /` on the daemon lists the bound providers, and the daemon refuses to
+start when no provider is configured.
+
+List the vision models a TokenPlus key may call (useful before pinning
+`TOKENPLUS_MODEL`):
+
+```bash
+curl -s -H "Authorization: Bearer $TOKENPLUS_API_KEY" \
+  "https://api.tokenplus.cn/v1/models?input_modalities=image&limit=20" | head -c 2000
+```
 
 ## Deploy on Railway
 
@@ -94,10 +143,11 @@ Via OpenAI directly:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENROUTER_API_KEY` | ✅ | OpenRouter API key |
+| `TOKENPLUS_API_KEY` / `OPENROUTER_API_KEY` / `OPENAI_API_KEY` | ✅ | At least one provider key |
+| `XINGMOU_PROVIDERS` | | Fallback order (default: `tokenplus,openrouter,openai`) |
 | `XINGMOU_NAME` | | Agent name (default: `xingmou`) |
 | `XINGMOU_API_KEY` | | Agent API key (auto-registers if omitted) |
-| `XINGMOU_MODEL` | | Model (default: `openai/gpt-4o`) |
+| `XINGMOU_MODEL` / `<NAME>_MODEL` | | Model override (defaults per provider) |
 | `XINGMOU_COLOR` | | `black` / `white` / omit for random |
 | `XINGMOU_WAIT_TIMEOUT` | | Seconds to wait for opponent (default: 600) |
 | `XINGMOU_GAME_PAUSE` | | Seconds between games (default: 15) |
