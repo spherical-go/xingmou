@@ -1,6 +1,7 @@
 """Game loop: poll state → think → act."""
 
 import io
+import os
 import time
 import sys
 
@@ -23,6 +24,41 @@ OCEANS = [
 ]
 
 LABEL_H = 32  # height of the label bar above each tile
+LABEL_SIZE = 20  # font size for the label bar
+
+# Bold sans-serif fonts, in preference order. The first existing path wins;
+# set XINGMOU_FONT to force one. Covers Debian (Docker), macOS and Windows.
+_FONT_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/Library/Fonts/Arial Bold.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+)
+
+
+def _load_font(size: int = LABEL_SIZE) -> ImageFont.ImageFont:
+    """Load a TrueType font at `size`, falling back to Pillow's default.
+
+    The old code hard-coded a Debian-only path, so on macOS (and in the
+    container, which had no fonts installed) every label silently degraded to
+    the tiny bitmap default.
+    """
+    candidates = _FONT_CANDIDATES
+    override = os.environ.get("XINGMOU_FONT")
+    if override:
+        candidates = (override,) + candidates
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except (OSError, IOError):
+            continue
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:  # Pillow < 10.1 has no size argument
+        return ImageFont.load_default()
 
 
 def _tile_2x2(images: list[bytes], labels: list[str]) -> bytes:
@@ -32,10 +68,7 @@ def _tile_2x2(images: list[bytes], labels: list[str]) -> bytes:
     cell_h = LABEL_H + h
     grid = Image.new("RGB", (w * 2, cell_h * 2), (0, 0, 0))
     draw = ImageDraw.Draw(grid)
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
-    except (OSError, IOError):
-        font = ImageFont.load_default()
+    font = _load_font(LABEL_SIZE)
     for i, (img, label) in enumerate(zip(pils, labels)):
         x = (i % 2) * w
         y = (i // 2) * cell_h

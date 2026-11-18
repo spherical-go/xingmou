@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import time
 from pathlib import Path
 
 import click
@@ -33,6 +34,34 @@ def _get_client() -> AstrialClient:
         click.echo("❌ No API key. Run `xingmou register --name <name>` first.", err=True)
         sys.exit(1)
     return AstrialClient(base_url=base_url, api_key=api_key)
+
+
+def _wait_for_start(
+    client: AstrialClient,
+    game_id: str,
+    timeout: float = 600.0,
+    poll: float = 2.0,
+) -> bool:
+    """Poll until the opponent has joined and the game has started.
+
+    Returns True once moves can be played, False if `timeout` elapses first.
+    """
+    deadline = time.time() + timeout
+    while True:
+        state = client.state(game_id)
+        if "game_over" in state:
+            return True
+        started = state.get("started")
+        # Older servers have no `started` field; a move on the board is then
+        # the only reliable evidence that the game is really under way.
+        if started is None:
+            started = state.get("move_count", 0) > 0
+        if started:
+            return True
+        if time.time() >= deadline:
+            return False
+        click.echo(".", nl=False)
+        time.sleep(poll)
 
 
 @click.group()
@@ -101,21 +130,16 @@ def play(create: bool, game_id: str | None, color: str, png: bool, poll: float):
 
     # Wait for opponent if we created
     if create:
+        timeout = float(os.environ.get("XINGMOU_WAIT_TIMEOUT", "600"))
         click.echo("⏳ Waiting for opponent...", nl=False)
-        import time
-        while True:
-            state = client.state(game_id)
-            # Game starts when both players have joined
-            if state.get("move_count", 0) >= 0:
-                # Check if opponent has joined by seeing if the game is ready
-                try:
-                    # Try to see if it's anyone's turn
-                    if state.get("your_turn") is not None:
-                        break
-                except Exception:
-                    pass
-            click.echo(".", nl=False)
-            time.sleep(2)
+        if not _wait_for_start(client, game_id, timeout=timeout):
+            click.echo()
+            click.echo(
+                f"❌ No opponent joined within {timeout:.0f}s. "
+                f"Game {game_id} is still open at {client.base_url}/play?game={game_id}",
+                err=True,
+            )
+            sys.exit(1)
         click.echo(" ready!")
 
     play_game(client, game_id, poll_interval=poll, use_png=png)

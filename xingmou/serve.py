@@ -162,8 +162,10 @@ def _wait_for_game_start(client: AstrialClient, game_id: str, timeout: float,
             return True
         if started:
             return True
-        # Fallback for older servers without started field
-        if move_count > 0 or your_turn:
+        # Fallback for older servers without a `started` field: only a move on
+        # the board proves the game began (`your_turn` alone is true for Black
+        # before the opponent has even joined).
+        if started is None and move_count > 0:
             return True
         if time.time() - wait_start > timeout:
             log.warning("timeout waiting for %s after %.0fs", game_id[:8], timeout)

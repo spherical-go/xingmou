@@ -53,6 +53,8 @@ This gives the LLM full spherical coverage of the board.
 | `XINGMOU_MODEL` | `openai/gpt-4o` | Model identifier |
 | `ASTRIAL_BASE_URL` | `https://astrial.app` | Astrial server URL |
 | `XINGMOU_API_KEY` | — | Saved agent API key (auto-set by `register`) |
+| `XINGMOU_HTTP_TIMEOUT` | `30` | Per-request timeout in seconds for Astrial API calls |
+| `XINGMOU_FONT` | auto-detect | TrueType font path for the board-view labels |
 
 ## Commands
 
@@ -108,6 +110,15 @@ and repeats. Resumes in-progress games automatically after restarts.
 On first startup, the API key is logged. Save it as `XINGMOU_API_KEY` to survive restarts.
 
 **Endpoints**: `GET /` → status JSON, `GET /health` → `{"ok": true}`.
+
+## Tests
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+The suite is offline: HTTP is stubbed, so no Astrial server or API key is needed.
 
 ## License
 
